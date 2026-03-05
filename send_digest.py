@@ -8,8 +8,8 @@ import os
 
 # --- הגדרות ---
 TO_EMAIL = "hofit2good@gmail.com , amir.cohen@nokia.com"  # ← שנה לכתובת היעד
-FROM_EMAIL = os.environ["ai2good45@gmail.com"]
-GMAIL_PASSWORD = os.environ["install10"]
+FROM_EMAIL = os.environ["GMAIL_USER"]              # ← לא לשנות!
+GMAIL_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]  # ← לא לשנות!
 
 # RSS feeds חדשות תעבורה
 FEEDS = [
