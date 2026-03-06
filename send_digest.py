@@ -124,7 +124,7 @@ def build_email(news_articles, mot_articles):
 
 def send_email(html_content):
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"🚗 חדשות תעבורה — {datetime.now().strftime('%d/%m/%Y')}"
+    msg["Subject"] = f"🚗 חדשות תעבורה מהאח הכי הכי ❤️ — {datetime.now().strftime('%d/%m/%Y')}"
     msg["From"] = FROM_EMAIL
     msg["To"] = TO_EMAIL
     msg.attach(MIMEText(html_content, "html"))
