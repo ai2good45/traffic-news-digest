@@ -143,8 +143,5 @@ if __name__ == "__main__":
 
     print(f"נמצאו: {len(news_articles)} חדשות + {len(mot_articles)} הודעות משרד")
 
-    if news_articles or mot_articles:
-        html = build_email(news_articles, mot_articles)
-        send_email(html)
-    else:
-        print("לא נמצא תוכן היום")
+html = build_email(news_articles, mot_articles)
+send_email(html)
