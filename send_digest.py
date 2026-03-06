@@ -13,9 +13,9 @@ GMAIL_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]  # ← לא לשנות!
 
 # RSS feeds חדשות תעבורה
 FEEDS = [
-    "https://www.ynet.co.il/Integration/StoryRss2.xml",
-    "https://www.mako.co.il/rss/31",
-    "https://www.walla.co.il/rss/1264",
+    "https://news.google.com/rss/search?q=תעבורה+ישראל&hl=he&gl=IL&ceid=IL:he",
+    "https://news.google.com/rss/search?q=תחבורה+ציבורית+ישראל&hl=he&gl=IL&ceid=IL:he",
+    "https://news.google.com/rss/search?q=כבישים+תאונות+ישראל&hl=he&gl=IL&ceid=IL:he",
 ]
 
 KEYWORDS = [
@@ -31,7 +31,7 @@ def fetch_news_articles():
             for entry in feed.entries:
                 title = entry.get("title", "")
                 summary = entry.get("summary", "")
-                if any(kw in title or kw in summary for kw in KEYWORDS):
+                if title:
                     articles.append({
                         "title": title,
                         "summary": summary[:200],
