@@ -332,7 +332,115 @@ def fetch_gov_agency(url, name):
     return results[:5]
 
 # ================================================================
-# 8. מקורות בינלאומיים — Reuters, EASA, IATA, OECD, Maersk
+# 8. בורסה לניירות ערך — MAYA דיווחים מיידיים
+#    חברות תחבורה, תעופה, נמלים, רכבות, אוטובוסים
+# ================================================================
+
+# חברות תחבורה ציבוריות בבורסה + מילות מפתח לסינון דיווחים
+TASE_COMPANIES = [
+    "אל על", "אלעל", "ELAL",
+    "ישראייר", "ISRAIR",
+    "ארקיע", "ARKIA",
+    "אייר חיפה",
+    "נמל אשדוד", "נמל חיפה", "נמל אילת", "נמל הדרום",
+    "נתיבי איילון",
+    "כביש חוצה ישראל", "כביש 6",
+    "אגד", "דן",
+    "מספנות ישראל",
+    "ממגורות חיפה", "דגון",
+    "רשות שדות התעופה",
+]
+
+# כל מילות המפתח משולבות לסינון כותרות/תקצירים
+TASE_KEYWORDS = TASE_COMPANIES + [
+    "תחבורה", "תעבורה", "תעופה", "נמל", "ספנות",
+    "אוטובוס", "רכבת", "כביש", "נוסעים", "טיסה",
+    "מטען", "לוגיסטיקה", "שילוח",
+]
+
+def fetch_tase_reports():
+    results = []
+    seen_titles = set()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=CUTOFF_HOURS)
+
+    # MAYA RSS — דיווחים מיידיים כלל שוק
+    maya_feeds = [
+        "https://maya.tase.co.il/rss/reports",
+        "https://maya.tase.co.il/rss/news",
+    ]
+
+    for feed_url in maya_feeds:
+        try:
+            feed = feedparser.parse(feed_url)
+            for entry in feed.entries:
+                title   = entry.get("title", "").strip()
+                summary = entry.get("summary", entry.get("description", ""))
+                if not title or title in seen_titles:
+                    continue
+
+                # סינון תאריך — 24 שעות אחרונות בלבד
+                published = entry.get("published_parsed") or entry.get("updated_parsed")
+                if published:
+                    pub_dt = datetime(*published[:6], tzinfo=timezone.utc)
+                    if pub_dt < cutoff:
+                        continue
+
+                # סינון רלוונטיות — חברת תחבורה או מילת מפתח
+                text = title + " " + summary
+                if not any(kw in text for kw in TASE_KEYWORDS):
+                    continue
+
+                seen_titles.add(title)
+                link = entry.get("link", "https://maya.tase.co.il")
+                results.append({
+                    "title": title,
+                    "summary": BeautifulSoup(summary, "html.parser").get_text()[:200] if summary else "",
+                    "link": link,
+                    "source": "MAYA — בורסה לני\"ע",
+                    "published": fmt_date(published) if published else ""
+                })
+        except Exception as e:
+            print(f"שגיאה ב-MAYA RSS {feed_url}: {e}")
+
+    # חיפוש נוסף ישיר ב-MAYA לפי שם חברה
+    maya_search = "https://maya.tase.co.il/reports/company?q={}&dateFrom={}"
+    date_from = (datetime.now() - timedelta(hours=CUTOFF_HOURS)).strftime("%Y-%m-%d")
+
+    for company in ["אל על", "ישראייר", "ארקיע", "נמל אשדוד", "נמל חיפה", "נתיבי איילון"]:
+        if len(results) >= 30:
+            break
+        try:
+            import urllib.parse
+            url = maya_search.format(urllib.parse.quote(company), date_from)
+            r = requests.get(url, headers=HEADERS, timeout=10)
+            if r.status_code == 200:
+                soup = BeautifulSoup(r.text, "html.parser")
+                for row in soup.select("tr, div[class*='report'], div[class*='item']")[:5]:
+                    a = row.find("a")
+                    if not a:
+                        continue
+                    title = a.get_text(strip=True)
+                    if not title or title in seen_titles or len(title) < 5:
+                        continue
+                    seen_titles.add(title)
+                    link = a.get("href", url)
+                    if not link.startswith("http"):
+                        link = "https://maya.tase.co.il" + link
+                    results.append({
+                        "title": f"{company} — {title}",
+                        "summary": "",
+                        "link": link,
+                        "source": "MAYA — בורסה לני\"ע",
+                        "published": date_from
+                    })
+        except Exception as e:
+            print(f"שגיאה ב-MAYA חיפוש {company}: {e}")
+
+    results.sort(key=lambda a: a.get("published", ""), reverse=True)
+    return results
+
+# ================================================================
+# 9. מקורות בינלאומיים — Reuters, EASA, IATA, OECD, Maersk
 #    סינון: חייב להכיל ישראל + תחבורה/תעופה/ספנות
 # ================================================================
 
@@ -477,6 +585,10 @@ def build_email(data):
                          "#f0f4ff", "#5a67d8", "#3c366b", data["aviation"],
                          "אין עדכונים.")
 
+    html += section_html("📈 בורסה לניירות ערך — דיווחים מיידיים (MAYA)",
+                         "#fff8f0", "#ed8936", "#c05621", data["tase"],
+                         "לא נמצאו דיווחים חדשים של חברות תחבורה.")
+
     html += section_html("🌍 מקורות בינלאומיים — Reuters / EASA / IATA / OECD / Maersk",
                          "#faf5ff", "#805ad5", "#553c9a", data["international"],
                          "לא נמצאו פרסומים חדשים הקשורים לישראל.")
@@ -494,7 +606,7 @@ def build_email(data):
 
 def send_email(html_content):
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"🚗 חדשות תעבורה מהאח הכי הכי ❤️ — {datetime.now().strftime('%d/%m/%Y')}"
+    msg["Subject"] = f"V3🚗 חדשות תעבורה מהאח הכי הכי ❤️ — {datetime.now().strftime('%d/%m/%Y')}"
     msg["From"] = FROM_EMAIL
     msg["To"] = TO_EMAIL
     msg.attach(MIMEText(html_content, "html"))
@@ -534,6 +646,9 @@ if __name__ == "__main__":
     ralbad   = fetch_gov_agency(GOV_AGENCIES[1][0], GOV_AGENCIES[1][1])
     aviation = fetch_gov_agency(GOV_AGENCIES[2][0], GOV_AGENCIES[2][1])
 
+    print("📈 שולף דיווחי בורסה (MAYA)...")
+    tase = fetch_tase_reports()
+
     print("🌍 שולף מקורות בינלאומיים...")
     international = fetch_international()
 
@@ -547,6 +662,7 @@ if __name__ == "__main__":
         "shipping": shipping,
         "ralbad": ralbad,
         "aviation": aviation,
+        "tase": tase,
         "international": international,
         "news": news,
     }
