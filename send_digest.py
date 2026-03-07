@@ -16,6 +16,30 @@ CUTOFF_HOURS = 24
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
 # ================================================================
+# מילות מפתח לסינון תוכן — תחבורה
+# ================================================================
+
+HE_KEYWORDS = [
+    "משרד התחבורה", "משרד האוצר", "כבישים", "נתיבי איילון", "נתיבי ישראל",
+    "כביש 6", 'נת"ע', "רכבת ישראל", "אגד", "דן", "מס גודש",
+    "אוטובוסים", "אוטובוס", "תחבורה", "תעבורה", "תאונות", "תאונה",
+    "נמל תעופה", 'נתב"ג', "שדה תעופה", "אלעל", "ישראייר", "ארקיע",
+    "אייר חיפה", "רשות שדות התעופה", "רשות התעופה האזרחית",
+    "הרשות הלאומית לבטיחות בדרכים", 'רלב"ד',
+    "נמל חיפה", "נמל אשדוד", "מספנות ישראל", "נמל אילת", "נמל הדרום",
+    "ממגורות חיפה", "דגון",
+    "מירי רגב", "משה בן זקן", "עידן מועלם",
+    "כביש", "מחלף", "פקק", "נסיעה", "רכבת", "נתיב מהיר",
+    "ספנות", "נמל", "מטוס", "טיסה", "נוסעים", "תשתיות תחבורה",
+    "מכרז", "פטור ממכרז", "בטיחות בדרכים",
+]
+
+def is_transport_related(title, summary=""):
+    """בודק אם הפריט קשור לתחבורה לפי מילות המפתח"""
+    text = title + " " + summary
+    return any(kw in text for kw in HE_KEYWORDS)
+
+# ================================================================
 # פונקציות עזר
 # ================================================================
 
@@ -94,9 +118,13 @@ def fetch_mot_announcements():
         r = requests.post(url, json=payload, headers={**HEADERS, "Content-Type": "application/json"}, timeout=15)
         if r.status_code == 200:
             for item in r.json().get("results", []):
+                title   = item.get("title", "ללא כותרת")
+                summary = item.get("excerpt", "")[:250]
+                if not is_transport_related(title, summary):
+                    continue
                 articles.append({
-                    "title": item.get("title", "ללא כותרת"),
-                    "summary": item.get("excerpt", "")[:250],
+                    "title": title,
+                    "summary": summary,
                     "link": item.get("clickUri", "https://www.gov.il/he/departments/ministry_of_transport_and_road_safety"),
                     "source": "משרד התחבורה",
                     "published": ""
@@ -133,9 +161,12 @@ def fetch_tenders():
                 if not link.startswith("http"):
                     link = "https://mr.gov.il" + link
                 summary_el = item.find(["p", "span"], class_=lambda c: c and "desc" in str(c).lower())
+                summary = summary_el.get_text(strip=True)[:200] if summary_el else ""
+                if not is_transport_related(title, summary):
+                    continue
                 results.append({
                     "title": title,
-                    "summary": summary_el.get_text(strip=True)[:200] if summary_el else "",
+                    "summary": summary,
                     "link": link,
                     "source": source_name,
                     "published": ""
@@ -169,9 +200,12 @@ def fetch_rail_tenders():
                 link = a.get("href", url) if a else url
                 if not link.startswith("http"):
                     link = "https://rail.co.il/" + link.lstrip("/")
+                summary = cols[1].get_text(strip=True)[:200] if len(cols) > 1 else ""
+                if not is_transport_related(title, summary):
+                    continue
                 results.append({
                     "title": title,
-                    "summary": cols[1].get_text(strip=True)[:200] if len(cols) > 1 else "",
+                    "summary": summary,
                     "link": link,
                     "source": "מכרזי רכבת ישראל",
                     "published": cols[-1].get_text(strip=True) if len(cols) > 2 else ""
@@ -194,12 +228,13 @@ def fetch_travel_warnings():
             if "json" in ct:
                 data = r.json()
                 for item in data.get("items", data.get("results", []))[:10]:
-                    title = item.get("title", item.get("Title", ""))[:150]
-                    if not title:
+                    title   = item.get("title", item.get("Title", ""))[:150]
+                    summary = item.get("description", item.get("Description", ""))[:200]
+                    if not title or not is_transport_related(title, summary):
                         continue
                     results.append({
                         "title": title,
-                        "summary": item.get("description", item.get("Description", ""))[:200],
+                        "summary": summary,
                         "link": item.get("url", item.get("Url", url)),
                         "source": "אזהרות מסע — מלל",
                         "published": ""
@@ -211,6 +246,8 @@ def fetch_travel_warnings():
                     a = card.find("a")
                     title = a.get_text(strip=True) if a else card.get_text(strip=True)[:100]
                     if not title or title in seen or len(title) < 5:
+                        continue
+                    if not is_transport_related(title):
                         continue
                     seen.add(title)
                     link = a.get("href", url) if a else url
@@ -237,6 +274,8 @@ def fetch_knesset_committee(committee_id, name):
             for a in soup.select("a[href*='meeting'], a[href*='Meeting'], div[class*='row'] a, li a")[:15]:
                 title = a.get_text(strip=True)
                 if not title or title in seen or len(title) < 8:
+                    continue
+                if not is_transport_related(title):
                     continue
                 seen.add(title)
                 link = a.get("href", url)
@@ -273,14 +312,17 @@ def fetch_gov_agency(url, name):
                 title = title_el.get_text(strip=True) if title_el else (a.get_text(strip=True) if a else "")
                 if not title or title in seen or len(title) < 5:
                     continue
+                desc_el = card.find("p")
+                summary = desc_el.get_text(strip=True)[:200] if desc_el else ""
+                if not is_transport_related(title, summary):
+                    continue
                 seen.add(title)
                 link = a.get("href", url) if a else url
                 if not link.startswith("http"):
                     link = "https://www.gov.il" + link
-                desc_el = card.find("p")
                 results.append({
                     "title": title,
-                    "summary": desc_el.get_text(strip=True)[:200] if desc_el else "",
+                    "summary": summary,
                     "link": link,
                     "source": name,
                     "published": ""
@@ -365,14 +407,22 @@ def section_html(title, color_bg, color_border, color_title, items, empty_msg):
     """
     if items:
         for i, a in enumerate(items, 1):
-            pub = f"&nbsp;|&nbsp;<small style='color:#999;'>{a['published']}</small>" if a.get("published") else ""
+            pub = a.get("published", "")
+            date_badge = (
+                f"<span style='background:#f0f0f0; color:#555; font-size:0.78em; "
+                f"padding:2px 6px; border-radius:4px; margin-right:6px;'>📅 {pub}</span>"
+                if pub else
+                "<span style='background:#f0f0f0; color:#aaa; font-size:0.78em; "
+                "padding:2px 6px; border-radius:4px; margin-right:6px;'>📅 לא ידוע</span>"
+            )
             summary_block = f"<span style='color:#555; font-size:0.9em;'>{a['summary']}</span><br>" if a.get("summary") else ""
             html += f"""
             <div style="background:white; border-radius:6px; padding:12px; margin-bottom:10px; border-right:4px solid {color_border};">
               <strong>{i}. {a['title']}</strong><br>
               {summary_block}
+              {date_badge}
               <a href="{a['link']}" style="color:{color_border}; font-size:0.85em;">קרא עוד ←</a>
-              <small style="color:#999;"> — {a['source']}</small>{pub}
+              <small style="color:#999;"> — {a['source']}</small>
             </div>"""
     else:
         html += f'<p style="color:#888;">{empty_msg}</p>'
@@ -444,7 +494,7 @@ def build_email(data):
 
 def send_email(html_content):
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"V2.0 🚗 חדשות תעבורה מהאח הכי הכי ❤️ — {datetime.now().strftime('%d/%m/%Y')}"
+    msg["Subject"] = f"🚗 חדשות תעבורה מהאח הכי הכי ❤️ — {datetime.now().strftime('%d/%m/%Y')}"
     msg["From"] = FROM_EMAIL
     msg["To"] = TO_EMAIL
     msg.attach(MIMEText(html_content, "html"))
