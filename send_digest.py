@@ -5,6 +5,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta, timezone
 import os
+import urllib.parse
 from bs4 import BeautifulSoup
 
 # --- הגדרות ---
@@ -13,25 +14,53 @@ FROM_EMAIL = os.environ["GMAIL_USER"]
 GMAIL_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 
 CUTOFF_HOURS = 24
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8",
+}
 
 # ================================================================
-# מילות מפתח לסינון תוכן — תחבורה
+# מילות מפתח לסינון תוכן — תחבורה (מורחב)
 # ================================================================
 
 HE_KEYWORDS = [
-    "משרד התחבורה", "משרד האוצר", "כבישים", "נתיבי איילון", "נתיבי ישראל",
-    "כביש 6", 'נת"ע', "רכבת ישראל", "אגד", "דן", "מס גודש",
-    "אוטובוסים", "אוטובוס", "תחבורה", "תעבורה", "תאונות", "תאונה",
-    "נמל תעופה", 'נתב"ג', "שדה תעופה", "אלעל", "ישראייר", "ארקיע",
-    "אייר חיפה", "רשות שדות התעופה", "רשות התעופה האזרחית",
-    "הרשות הלאומית לבטיחות בדרכים", 'רלב"ד',
-    "נמל חיפה", "נמל אשדוד", "מספנות ישראל", "נמל אילת", "נמל הדרום",
-    "ממגורות חיפה", "דגון",
+    # משרדים ורשויות
+    "משרד התחבורה", "משרד האוצר", "רשות התחבורה",
+    # כבישים ותנועה
+    "כבישים", "כביש", "מחלף", "מחלף", "פקק", "עומס תנועה",
+    "נתיבי איילון", "נתיבי ישראל", "כביש 6", "כביש חוצה ישראל",
+    "נתיב מהיר", "נתיב", "צומת", "גשר", "מנהרה",
+    "עבודות כביש", "תמרורים", "מהירות", "מכמונת",
+    "משטרת תנועה", "שוטר תנועה", "תנועה", "תעבורה",
+    # תאונות ובטיחות
+    "תאונה", "תאונות", "תאונת דרכים", "פגע וברח",
+    "בטיחות בדרכים", "הרשות הלאומית לבטיחות בדרכים", 'רלב"ד',
+    "קטלניות", "נהג", "אופנוע", "אופניים", "קורקינט",
+    # תחבורה ציבורית
+    "תחבורה ציבורית", "תחבורה", "אוטובוס", "אוטובוסים",
+    "קו אוטובוס", "תחנת אוטובוס", "תחנה מרכזית",
+    "אגד", "דן", "מטרופולין", "קווים", 'נת"ע',
+    "רכבת", "רכבת ישראל", "תחנת רכבת", "רכבת קלה",
+    "מטרו", "קו רכבת", "מסילה",
+    "מונית", "מוניות", "שירות מוניות", "מוניות שיתופיות",
+    # תעופה
+    "תעופה", "נמל תעופה", "שדה תעופה", 'נתב"ג',
+    "אלעל", "אל על", "ישראייר", "ארקיע", "אייר חיפה",
+    "טיסה", "טיסות", "מטוס", "מטוסים", "נוסעים",
+    "רשות שדות התעופה", "רשות התעופה האזרחית",
+    "EASA", "IATA", "מסוף",
+    # ימאות ונמלים
+    "נמל", "נמלים", "נמל חיפה", "נמל אשדוד", "נמל אילת", "נמל הדרום",
+    "ספנות", "ים", "כלי שיט", "אוניה", "מכולות", "מטען ים",
+    "מספנות ישראל", "ממגורות חיפה", "דגון",
+    # לוגיסטיקה ותשתיות
+    "לוגיסטיקה", "שילוח", "מטען", "יבוא", "יצוא",
+    "תשתיות תחבורה", "תשתיות", "הסעות",
+    "נסיעה", "נסיעות", "נוסע",
+    # מכרזים ורגולציה
+    "מכרז", "פטור ממכרז", "הקצאה", "רישיון",
+    # אנשים מרכזיים
     "מירי רגב", "משה בן זקן", "עידן מועלם",
-    "כביש", "מחלף", "פקק", "נסיעה", "רכבת", "נתיב מהיר",
-    "ספנות", "נמל", "מטוס", "טיסה", "נוסעים", "תשתיות תחבורה",
-    "מכרז", "פטור ממכרז", "בטיחות בדרכים",
 ]
 
 def is_transport_related(title, summary=""):
@@ -56,13 +85,18 @@ def fmt_date(published_parsed):
     return datetime(*published_parsed[:6]).strftime("%d/%m %H:%M")
 
 # ================================================================
-# 1. חדשות תעבורה כלליות — Google News RSS
+# 1. חדשות תעבורה כלליות — Google News RSS (מורחב)
 # ================================================================
 
 FEEDS = [
     "https://news.google.com/rss/search?q=תעבורה+ישראל&hl=he&gl=IL&ceid=IL:he",
     "https://news.google.com/rss/search?q=תחבורה+ציבורית+ישראל&hl=he&gl=IL&ceid=IL:he",
     "https://news.google.com/rss/search?q=כבישים+תאונות+ישראל&hl=he&gl=IL&ceid=IL:he",
+    "https://news.google.com/rss/search?q=רכבת+ישראל+חדשות&hl=he&gl=IL&ceid=IL:he",
+    "https://news.google.com/rss/search?q=אל+על+ישראייר+ארקיע&hl=he&gl=IL&ceid=IL:he",
+    "https://news.google.com/rss/search?q=נמל+חיפה+אשדוד+ספנות&hl=he&gl=IL&ceid=IL:he",
+    "https://news.google.com/rss/search?q=משטרת+תנועה+תאונה+כביש&hl=he&gl=IL&ceid=IL:he",
+    "https://news.google.com/rss/search?q=אוטובוס+מוניות+תחבורה+ציבורית&hl=he&gl=IL&ceid=IL:he",
 ]
 
 def fetch_news_articles():
@@ -143,6 +177,13 @@ def fetch_tenders():
         ("https://mr.gov.il/ilgstorefront/he/search/?q=%3AupdateDate%3Aarchive%3Afalse&text=&s=TENDER#", "מכרז — חשב הכללי"),
         ("https://mr.gov.il/ilgstorefront/he/search/?q=%3AupdateDate%3Aarchive%3Afalse&text=&s=EXEMPTION#", "פטור ממכרז — חשב הכללי"),
     ]
+    # מילות מפתח ספציפיות לתחבורה במכרזים
+    tender_transport_kw = [
+        "תחבורה", "כביש", "נסיעה", "אוטובוס", "רכבת", "תעופה", "נמל",
+        "ספנות", "לוגיסטי", "הסעה", "שינוע", "רכב", "הולכי רגל",
+        "מסילה", "מדרכה", "תמרור", "גשר", "מנהרה", "חניה",
+        "מטוס", "שדה תעופה", "ים", "שילוח", "מטען"
+    ]
     for url, source_name in sources:
         try:
             r = requests.get(url, headers=HEADERS, timeout=15)
@@ -150,7 +191,9 @@ def fetch_tenders():
                 continue
             soup = BeautifulSoup(r.text, "html.parser")
             seen = set()
-            for item in soup.select("li.product__item, div.product__item, div[class*='result'], li[class*='result']")[:15]:
+            # selectors מורחבים
+            items = soup.select("li.product__item, div.product__item, div[class*='result'], li[class*='result'], article, div[class*='tender'], div[class*='item']")[:20]
+            for item in items:
                 a = item.find("a")
                 title_el = item.find(["h2", "h3", "h4", "span"], class_=lambda c: c and "name" in str(c).lower())
                 title = (title_el or a).get_text(strip=True)[:150] if (title_el or a) else ""
@@ -162,7 +205,10 @@ def fetch_tenders():
                     link = "https://mr.gov.il" + link
                 summary_el = item.find(["p", "span"], class_=lambda c: c and "desc" in str(c).lower())
                 summary = summary_el.get_text(strip=True)[:200] if summary_el else ""
-                if not is_transport_related(title, summary):
+                # סינון רלוונטיות — רחב יותר למכרזים
+                text = title + " " + summary
+                if not (is_transport_related(title, summary) or
+                        any(kw in text for kw in tender_transport_kw)):
                     continue
                 results.append({
                     "title": title,
@@ -201,8 +247,6 @@ def fetch_rail_tenders():
                 if not link.startswith("http"):
                     link = "https://rail.co.il/" + link.lstrip("/")
                 summary = cols[1].get_text(strip=True)[:200] if len(cols) > 1 else ""
-                if not is_transport_related(title, summary):
-                    continue
                 results.append({
                     "title": title,
                     "summary": summary,
@@ -333,10 +377,9 @@ def fetch_gov_agency(url, name):
 
 # ================================================================
 # 8. בורסה לניירות ערך — MAYA דיווחים מיידיים
-#    חברות תחבורה, תעופה, נמלים, רכבות, אוטובוסים
+#    משתמש ב-API האמיתי של mayaapi.tase.co.il
 # ================================================================
 
-# חברות תחבורה ציבוריות בבורסה + מילות מפתח לסינון דיווחים
 TASE_COMPANIES = [
     "אל על", "אלעל", "ELAL",
     "ישראייר", "ISRAIR",
@@ -351,90 +394,96 @@ TASE_COMPANIES = [
     "רשות שדות התעופה",
 ]
 
-# כל מילות המפתח משולבות לסינון כותרות/תקצירים
 TASE_KEYWORDS = TASE_COMPANIES + [
     "תחבורה", "תעבורה", "תעופה", "נמל", "ספנות",
     "אוטובוס", "רכבת", "כביש", "נוסעים", "טיסה",
-    "מטען", "לוגיסטיקה", "שילוח",
+    "מטען", "לוגיסטיקה", "שילוח", "מסילה",
 ]
+
+MAYA_API_HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "he-IL,he;q=0.9",
+    "Origin": "https://maya.tase.co.il",
+    "Referer": "https://maya.tase.co.il/",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+}
 
 def fetch_tase_reports():
     results = []
     seen_titles = set()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=CUTOFF_HOURS)
+    date_from = cutoff.strftime("%Y-%m-%d")
+    date_to   = datetime.now().strftime("%Y-%m-%d")
 
-    # MAYA RSS — דיווחים מיידיים כלל שוק
-    maya_feeds = [
-        "https://maya.tase.co.il/rss/reports",
-        "https://maya.tase.co.il/rss/news",
-    ]
-
-    for feed_url in maya_feeds:
-        try:
-            feed = feedparser.parse(feed_url)
-            for entry in feed.entries:
-                title   = entry.get("title", "").strip()
-                summary = entry.get("summary", entry.get("description", ""))
-                if not title or title in seen_titles:
-                    continue
-
-                # סינון תאריך — 24 שעות אחרונות בלבד
-                published = entry.get("published_parsed") or entry.get("updated_parsed")
-                if published:
-                    pub_dt = datetime(*published[:6], tzinfo=timezone.utc)
-                    if pub_dt < cutoff:
+    # ── שיטה 1: API ישיר של MAYA ──────────────────────────────────
+    api_url = (
+        f"https://mayaapi.tase.co.il/api/report/allreports"
+        f"?categoryId=0&companyId=0&from={date_from}&to={date_to}&language=1"
+    )
+    try:
+        r = requests.get(api_url, headers=MAYA_API_HEADERS, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            # ה-API מחזיר { Reports: [...] } או רשימה ישירה
+            reports = data.get("Reports", data) if isinstance(data, dict) else data
+            if isinstance(reports, list):
+                for rep in reports:
+                    title   = rep.get("Header", rep.get("Title", rep.get("ReportTitle", ""))).strip()
+                    company = rep.get("CompanyName", rep.get("Company", ""))
+                    report_id = rep.get("ReportId", rep.get("Id", ""))
+                    if not title or title in seen_titles:
                         continue
-
-                # סינון רלוונטיות — חברת תחבורה או מילת מפתח
-                text = title + " " + summary
-                if not any(kw in text for kw in TASE_KEYWORDS):
-                    continue
-
-                seen_titles.add(title)
-                link = entry.get("link", "https://maya.tase.co.il")
-                results.append({
-                    "title": title,
-                    "summary": BeautifulSoup(summary, "html.parser").get_text()[:200] if summary else "",
-                    "link": link,
-                    "source": "MAYA — בורסה לני\"ע",
-                    "published": fmt_date(published) if published else ""
-                })
-        except Exception as e:
-            print(f"שגיאה ב-MAYA RSS {feed_url}: {e}")
-
-    # חיפוש נוסף ישיר ב-MAYA לפי שם חברה
-    maya_search = "https://maya.tase.co.il/reports/company?q={}&dateFrom={}"
-    date_from = (datetime.now() - timedelta(hours=CUTOFF_HOURS)).strftime("%Y-%m-%d")
-
-    for company in ["אל על", "ישראייר", "ארקיע", "נמל אשדוד", "נמל חיפה", "נתיבי איילון"]:
-        if len(results) >= 30:
-            break
-        try:
-            import urllib.parse
-            url = maya_search.format(urllib.parse.quote(company), date_from)
-            r = requests.get(url, headers=HEADERS, timeout=10)
-            if r.status_code == 200:
-                soup = BeautifulSoup(r.text, "html.parser")
-                for row in soup.select("tr, div[class*='report'], div[class*='item']")[:5]:
-                    a = row.find("a")
-                    if not a:
-                        continue
-                    title = a.get_text(strip=True)
-                    if not title or title in seen_titles or len(title) < 5:
+                    text = title + " " + company
+                    if not any(kw in text for kw in TASE_KEYWORDS):
                         continue
                     seen_titles.add(title)
-                    link = a.get("href", url)
-                    if not link.startswith("http"):
-                        link = "https://maya.tase.co.il" + link
+                    link = f"https://maya.tase.co.il/he/reports/{report_id}" if report_id else "https://maya.tase.co.il"
+                    pub_str = rep.get("PubDate", rep.get("Date", date_from))
+                    if pub_str:
+                        pub_str = pub_str[:10]
                     results.append({
-                        "title": f"{company} — {title}",
+                        "title": f"{company} — {title}" if company else title,
                         "summary": "",
                         "link": link,
-                        "source": "MAYA — בורסה לני\"ע",
-                        "published": date_from
+                        "source": 'MAYA — בורסה לני"ע',
+                        "published": pub_str or date_from,
                     })
-        except Exception as e:
-            print(f"שגיאה ב-MAYA חיפוש {company}: {e}")
+    except Exception as e:
+        print(f"שגיאה ב-MAYA API: {e}")
+
+    # ── שיטה 2: גיבוי — Google News לחיפוש MAYA ──────────────────
+    if len(results) < 3:
+        print("MAYA API לא החזיר תוצאות, מנסה Google News כגיבוי...")
+        maya_backup_feeds = [
+            f"https://news.google.com/rss/search?q=site:maya.tase.co.il+תחבורה+OR+תעופה+OR+נמל&hl=he&gl=IL&ceid=IL:he",
+            f"https://news.google.com/rss/search?q=אל+על+ישראייר+בורסה+דיווח&hl=he&gl=IL&ceid=IL:he",
+            f"https://news.google.com/rss/search?q=ישראייר+נמל+תחבורה+בורסה&hl=he&gl=IL&ceid=IL:he",
+        ]
+        for feed_url in maya_backup_feeds:
+            try:
+                feed = feedparser.parse(feed_url)
+                for entry in feed.entries:
+                    title = entry.get("title", "").strip()
+                    summary = entry.get("summary", "")
+                    if not title or title in seen_titles:
+                        continue
+                    published = entry.get("published_parsed") or entry.get("updated_parsed")
+                    if published:
+                        pub_dt = datetime(*published[:6], tzinfo=timezone.utc)
+                        if pub_dt < cutoff:
+                            continue
+                    if not any(kw in (title + " " + summary) for kw in TASE_KEYWORDS):
+                        continue
+                    seen_titles.add(title)
+                    results.append({
+                        "title": title,
+                        "summary": summary[:200],
+                        "link": entry.get("link", ""),
+                        "source": 'MAYA / חדשות בורסה',
+                        "published": fmt_date(published) if published else date_from,
+                    })
+            except Exception as e:
+                print(f"שגיאה ב-MAYA גיבוי: {e}")
 
     results.sort(key=lambda a: a.get("published", ""), reverse=True)
     return results
@@ -479,12 +528,10 @@ def fetch_international():
 
                 text = (title + " " + summary).lower()
 
-                # EASA ו-IATA: חייב להזכיר ישראל
                 if source_name in ["EASA", "IATA"]:
                     if not any(kw in text for kw in ISRAEL_KW):
                         continue
                 else:
-                    # Reuters, OECD, Maersk: ישראל + תחבורה
                     if not any(kw in text for kw in ISRAEL_KW):
                         continue
                     if not any(kw in text for kw in TRANSPORT_KW):
@@ -646,7 +693,7 @@ if __name__ == "__main__":
     ralbad   = fetch_gov_agency(GOV_AGENCIES[1][0], GOV_AGENCIES[1][1])
     aviation = fetch_gov_agency(GOV_AGENCIES[2][0], GOV_AGENCIES[2][1])
 
-    print("📈 שולף דיווחי בורסה (MAYA)...")
+    print("📈 שולף דיווחי בורסה (MAYA API)...")
     tase = fetch_tase_reports()
 
     print("🌍 שולף מקורות בינלאומיים...")
