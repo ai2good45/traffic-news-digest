@@ -653,7 +653,7 @@ def build_email(data):
 
 def send_email(html_content):
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"V3🚗 חדשות תעבורה מהאח הכי הכי ❤️ — {datetime.now().strftime('%d/%m/%Y')}"
+    msg["Subject"] = f"V4🚗 חדשות תעבורה מהאח הכי הכי ❤️ — {datetime.now().strftime('%d/%m/%Y')}"
     msg["From"] = FROM_EMAIL
     msg["To"] = TO_EMAIL
     msg.attach(MIMEText(html_content, "html"))
